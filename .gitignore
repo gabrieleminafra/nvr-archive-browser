@@ -1,0 +1,17 @@
+# This repository is designed to live inside an NVR recording store. Deny all
+# paths by default, then allow only the application source. This makes a plain
+# `git add .` safe even when terabytes of footage sit beside these files.
+*
+!.gitignore
+!.env.example
+!README.md
+!compose.yaml
+!app/
+!app/**
+!tests/
+!tests/**
+
+# Never publish local configuration or generated Python files.
+.env
+**/__pycache__/
+**/*.py[cod]
