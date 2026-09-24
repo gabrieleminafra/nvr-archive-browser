@@ -40,6 +40,10 @@ services:
       # Optional: name cameras that aren't in the built-in map, e.g.
       # NVR_CAMERA_NAMES: "scrypted-31=Garage"
       NVR_CAMERA_NAMES: "${NVR_CAMERA_NAMES:-}"
+      # Comma-separated Scrypted stores within /data. Cameras from distinct
+      # stores can be shown as one timeline when their recorded IP matches.
+      NVR_ARCHIVE_DIRS: "${NVR_ARCHIVE_DIRS:-.}"
+      NVR_GROUP_CAMERAS_BY_IP: "${NVR_GROUP_CAMERAS_BY_IP:-false}"
       # Warm the selected day into volatile RAM. Nothing is persisted beside
       # the footage, and the warm data disappears with the container.
       NVR_WARM: "${NVR_WARM:-day}"
@@ -73,6 +77,8 @@ services:
       TZ: "${TZ:-Europe/Rome}"
       NVR_ROOT: /data
       NVR_CAMERA_NAMES: "${NVR_CAMERA_NAMES:-}"
+      NVR_ARCHIVE_DIRS: "${NVR_ARCHIVE_DIRS:-.}"
+      NVR_GROUP_CAMERAS_BY_IP: "${NVR_GROUP_CAMERAS_BY_IP:-false}"
     volumes:
       - "${NVR_DATA_DIR:-.}:/data:ro"
       - "./export:/export"

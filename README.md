@@ -31,6 +31,24 @@ If you prefer to clone the repository into a child directory of the recording
 store, set `NVR_DATA_DIR=..` in `.env`. `NVR_DATA_DIR=.` is the default and
 means that `compose.yaml` is beside the footage.
 
+### Browse multiple untouched archives
+
+When several Scrypted stores sit under one parent directory, mount that parent
+and list the stores instead of copying their contents together:
+
+```dotenv
+NVR_DATA_DIR=..
+NVR_ARCHIVE_DIRS=NVR,NVR-recovery
+NVR_GROUP_CAMERAS_BY_IP=true
+```
+
+The example above discovers cameras beneath both stores. With grouping enabled,
+camera IDs whose `session.json` files record the same IP address become one
+continuous timeline. The original directories remain separate and read-only.
+Leave grouping disabled if identical IPs might represent different physical
+cameras. Friendly names can target the resulting ID (the ID from the first
+listed archive) or any contributing source ID.
+
 The included `.gitignore` uses a deny-all allowlist. Even when the repository
 is initialized at the footage root, `git add .` can stage only the application
 source and cannot stage recordings, exports, caches, or `.env`.
@@ -38,6 +56,7 @@ source and cannot stage recordings, exports, caches, or `.env`.
 ## What the viewer does
 
 - Discovers all camera folders from `session.json` files.
+- Combines multiple read-only stores and can group matching cameras by IP.
 - Shows recorded days, contiguous coverage, and motion events on a timeline.
 - Plays one camera or multiple cameras on a synchronized wall-clock timeline.
 - Uses the high-resolution stream or the optional `.remote` substream.

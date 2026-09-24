@@ -658,19 +658,81 @@ def runs_of(segments, seg_ms=60000):
     return runs
 
 
-def build_index(root):
-    names = camera_names()
-    index = {'root': os.path.abspath(root), 'cameras': {}}
-    for cam in discover_cameras(root):
-        segments = scan_camera(root, cam)
-        if not segments:
+def archive_roots(root, archive_dirs=None):
+    """Resolve selected archive directories without allowing path traversal.
+
+    ``root`` is the read-only mount exposed to the application. Archive names
+    are relative paths within that mount, which lets one viewer consume several
+    independent Scrypted stores without copying or rearranging either one.
+    """
+    root = os.path.realpath(root)
+    dirs = archive_dirs or ['.']
+    resolved = []
+    for rel in dirs:
+        rel = rel.strip()
+        if not rel:
             continue
-        index['cameras'][cam] = {
-            'id': cam,
-            'name': names.get(cam, cam),
-            'ip': camera_ip(root, cam),
-            'segments': segments,
-            'lowSegments': scan_camera(root, cam + '.remote'),
-            'motion': scan_motion(root, cam),
-        }
+        path = os.path.realpath(os.path.join(root, rel))
+        if path != root and not path.startswith(root + os.sep):
+            raise ValueError('archive directory escapes recording root: %s' % rel)
+        resolved.append((rel, path))
+    return resolved
+
+
+def build_index(root, archive_dirs=None, group_by_ip=False):
+    names = camera_names()
+    root = os.path.abspath(root)
+    dirs = archive_dirs or ['.']
+    index = {
+        'root': root,
+        'archiveDirs': dirs,
+        'groupByIp': bool(group_by_ip),
+        'cameras': {},
+    }
+    groups = {}
+    for archive, archive_root in archive_roots(root, dirs):
+        for cam in discover_cameras(archive_root):
+            segments = scan_camera(archive_root, cam)
+            if not segments:
+                continue
+            ip = camera_ip(archive_root, cam)
+            key = ('ip', ip) if group_by_ip and ip else ('camera', archive, cam)
+            if key not in groups:
+                logical_id = cam
+                # Avoid an ID collision when grouping is disabled and the same
+                # camera ID exists in more than one selected archive.
+                if logical_id in index['cameras']:
+                    logical_id = '%s:%s' % (archive, cam)
+                group = {
+                    'id': logical_id,
+                    'name': names.get(cam, cam),
+                    'ip': ip,
+                    'segments': [],
+                    'lowSegments': [],
+                    'motion': [],
+                    'sources': [],
+                }
+                groups[key] = group
+                index['cameras'][logical_id] = group
+            group = groups[key]
+            prefix = '' if archive in ('', '.') else archive
+
+            def within_mount(items):
+                return [(start, os.path.join(prefix, rel) if prefix else rel, size)
+                        for start, rel, size in items]
+
+            group['segments'].extend(within_mount(segments))
+            group['lowSegments'].extend(
+                within_mount(scan_camera(archive_root, cam + '.remote')))
+            group['motion'].extend(scan_motion(archive_root, cam))
+            group['sources'].append({'archive': archive, 'camera': cam})
+            # A friendly name configured for any contributing source wins.
+            if cam in names:
+                group['name'] = names[cam]
+
+    for group in index['cameras'].values():
+        group['segments'].sort()
+        group['lowSegments'].sort()
+        group['motion'] = sorted(set(group['motion']))
+        group['name'] = names.get(group['id'], group['name'])
     return index

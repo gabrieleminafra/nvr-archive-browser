@@ -73,6 +73,10 @@ def main():
     ap.add_argument('command', choices=['list', 'clip', 'bulk'])
     ap.add_argument('--root', default=os.environ.get(
         'NVR_ROOT', os.path.dirname(os.path.abspath(__file__))))
+    ap.add_argument('--archives', default=os.environ.get('NVR_ARCHIVE_DIRS', '.'))
+    ap.add_argument('--group-by-ip', action='store_true', default=
+                    os.environ.get('NVR_GROUP_CAMERAS_BY_IP', '').strip().lower()
+                    in ('1', 'true', 'yes', 'on'))
     ap.add_argument('--cam')
     ap.add_argument('--res', choices=['high', 'low'], default='high')
     ap.add_argument('--start')
@@ -83,11 +87,16 @@ def main():
     args = ap.parse_args()
 
     root = os.path.abspath(args.root)
-    index = nvr_lib.build_index(root)
+    archives = [p.strip() for p in args.archives.split(',') if p.strip()] or ['.']
+    try:
+        index = nvr_lib.build_index(root, archives, args.group_by_ip)
+    except ValueError as e:
+        raise SystemExit(str(e))
     if not index['cameras']:
         raise SystemExit(
             'no Scrypted NVR camera directories found under %s\n'
-            '(looking for <camera>/<session>/session.json); pass --root' % root)
+            '(looking for <archive>/<camera>/<session>/session.json); '
+            'pass --root and --archives' % root)
 
     if args.command == 'list':
         for cam in index['cameras'].values():

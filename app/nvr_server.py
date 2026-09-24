@@ -81,23 +81,32 @@ def assert_outside_store(path, root, what):
             % (what, path, root))
 
 
-def has_cameras(root):
-    return bool(nvr_lib.discover_cameras(root))
+def archive_dirs(value):
+    return [part.strip() for part in value.split(',') if part.strip()] or ['.']
 
 
-def load_index(root, reindex=False):
+def env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def load_index(root, archives, group_by_ip, reindex=False):
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, 'index.json')
     if not reindex and os.path.exists(path):
         try:
             with open(path) as f:
                 index = json.load(f)
-            if index.get('root') == os.path.abspath(root):
+            if (index.get('root') == os.path.abspath(root)
+                    and index.get('archiveDirs', ['.']) == archives
+                    and index.get('groupByIp', False) == group_by_ip):
                 return index
         except Exception:
             pass
     print('indexing %s ...' % root)
-    index = nvr_lib.build_index(root)
+    index = nvr_lib.build_index(root, archives, group_by_ip)
     with open(path, 'w') as f:
         json.dump(index, f)
     return index
@@ -893,6 +902,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--root', default=os.environ.get(
         'NVR_ROOT', os.path.dirname(os.path.abspath(__file__))))
+    ap.add_argument('--archives', default=os.environ.get('NVR_ARCHIVE_DIRS', '.'))
+    ap.add_argument('--group-by-ip', action='store_true',
+                    default=env_bool('NVR_GROUP_CAMERAS_BY_IP'))
     ap.add_argument('--port', type=int, default=int(os.environ.get('NVR_PORT', 8787)))
     ap.add_argument('--host', default=os.environ.get('NVR_HOST', '127.0.0.1'))
     ap.add_argument('--cache', default=CACHE)
@@ -901,13 +913,18 @@ def main():
 
     CACHE = os.path.abspath(args.cache)
     ROOT = os.path.abspath(args.root)
+    archives = archive_dirs(args.archives)
     assert_outside_store(CACHE, ROOT, 'cache directory')
     os.makedirs(CACHE, exist_ok=True)
-    if not has_cameras(ROOT):
+    try:
+        INDEX = load_index(ROOT, archives, args.group_by_ip, args.reindex)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    if not INDEX['cameras']:
         raise SystemExit(
-            'no Scrypted NVR camera directories found under %s\n'
-            '(looking for <camera>/<session>/session.json)' % ROOT)
-    INDEX = load_index(ROOT, args.reindex)
+            'no Scrypted NVR camera directories found in %s under %s\n'
+            '(looking for <archive>/<camera>/<session>/session.json)'
+            % (', '.join(archives), ROOT))
     for c in INDEX['cameras'].values():
         print('  %-14s %-10s %6.1f h  %5.1f GiB' % (
             c['id'], c['name'], len(c['segments']) / 60.0,
@@ -921,6 +938,7 @@ def main():
     srv.daemon_threads = True
     print('\nhttp://%s:%d' % (args.host, args.port))
     print('recording store: %s  (read-only, never written to)' % ROOT)
+    print('archive roots:   %s' % ', '.join(archives))
     print('clip cache:      %s' % CACHE)
     try:
         srv.serve_forever()
