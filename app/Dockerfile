@@ -22,7 +22,6 @@ COPY . /app/
 
 USER nvr
 EXPOSE 8787
-VOLUME ["/cache"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD python3 -c "import os,urllib.request; \

@@ -24,7 +24,8 @@ docker compose up -d --build
 ```
 
 Open <http://localhost:8787>. On first start the viewer scans the archive and
-builds an index. Later starts reuse the cached index.
+builds an in-memory index. The scan repeats after the container is recreated;
+no persistent cache is written beside the footage.
 
 If you prefer to clone the repository into a child directory of the recording
 store, set `NVR_DATA_DIR=..` in `.env`. `NVR_DATA_DIR=.` is the default and
@@ -40,7 +41,8 @@ source and cannot stage recordings, exports, caches, or `.env`.
 - Shows recorded days, contiguous coverage, and motion events on a timeline.
 - Plays one camera or multiple cameras on a synchronized wall-clock timeline.
 - Uses the high-resolution stream or the optional `.remote` substream.
-- Generates hover previews and caches them for fast scrubbing.
+- Generates hover previews on demand and reuses them only while the container
+  is running.
 - Remuxes the original H.264 RTP data into MP4 without re-encoding video.
 - Exports individual clips or a time range from the command line.
 
@@ -81,14 +83,22 @@ The recording store is protected in several layers:
 | Layer | Guarantee |
 |---|---|
 | Archive mount | `${NVR_DATA_DIR:-.}:/data:ro` makes the entire recording store read-only inside the containers. |
-| Cache mount | `./cache:/cache` is the viewer's separate writable cache. |
-| Container filesystem | The viewer root filesystem is read-only, apart from a small `/tmp` tmpfs. |
+| Volatile workspace | `/cache` is a size-limited tmpfs. Generated data lives in RAM and disappears with the container. |
+| Container filesystem | The viewer root filesystem is read-only, apart from the `/tmp` and `/cache` tmpfs mounts. |
 | Process | The service runs as unprivileged uid 10001 with all capabilities dropped and `no-new-privileges`. |
 | Application | Startup fails if a configured writable path resolves inside the recording store. Archive files are opened only for reading. |
 
-The only generated data is the disposable index, MP4 cache, and preview cache
-under `./cache`, plus explicit exports under `./export`. The Docker build
-context is only `./app`, so footage is never sent to the Docker daemon.
+The viewer writes no cache directory on the host. Its index, JIT MP4s, and
+previews live under the container's volatile `/cache`; Docker removes them with
+the container. Explicit exporter output still goes to `./export`. The Docker
+build context is only `./app`, so footage is never sent to the Docker daemon.
+
+`NVR_CACHE_TMPFS_SIZE` sets the total RAM-backed workspace size (default `2g`).
+`NVR_CACHE_LIMIT_GB` sets the MP4 portion (default `1.5`). This is temporary
+working memory rather than durable caching: after a container restart, clips
+and previews are generated again when requested. Linux may swap tmpfs pages
+under memory pressure; disable swap on the Docker host if absolutely no backing
+storage writes are acceptable.
 
 There is no authentication. The default `NVR_BIND=127.0.0.1` exposes the UI
 only on the local machine. Use `0.0.0.0` only on a trusted network or behind an
@@ -101,10 +111,11 @@ authenticated reverse proxy.
 | Value | Behavior |
 |---|---|
 | `off` | Decode only when hovering. |
-| `day` | Warm the opened day; this is the default. |
+| `day` | Warm the opened day into volatile RAM; this is the default. |
 | `all` | Also warm the entire archive in the background at startup. |
 
-Warming performs scattered reads. Keep `day` on a mechanical or busy disk.
+Warming performs scattered reads and consumes RAM. Use `off` for strictly JIT
+behavior, especially with a mechanical or fragile source disk.
 `NVR_WARM_DELAY_MS` adds a pause between batches, and `NVR_THUMB_BUCKET`
 controls the interval between cached previews.
 

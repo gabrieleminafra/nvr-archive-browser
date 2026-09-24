@@ -366,11 +366,11 @@ def warm_day(cam_id, day, token):
 
 
 def prewarm_all():
-    """Fill the on-disk preview cache for the whole archive, once.
+    """Fill the configured preview cache for the whole archive, once.
 
-    Only runs with NVR_WARM=all. Resumes where it left off, because frames
-    already on disk are skipped, so it is safe to stop and start again — plug
-    the drive in somewhere idle and let it finish there.
+    Only runs with NVR_WARM=all. Frames already present in the current cache
+    are skipped. With the default tmpfs deployment, warming starts fresh after
+    the viewer container is recreated.
     """
     total = 0
     try:

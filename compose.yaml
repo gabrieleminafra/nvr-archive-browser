@@ -7,9 +7,9 @@
 #   open http://localhost:8787
 #
 # Every path below is relative to this file, so the service follows the drive
-# and needs no editing on a new machine. The archive is mounted read-only; the
-# only writable location is ./cache, a separate mount holding the index, muxed
-# clips and scrub preview frames.
+# and needs no editing on a new machine. The archive is mounted read-only.
+# Generated index, clip, and preview data lives only in a volatile RAM-backed
+# filesystem and disappears when the container stops.
 name: nvr-browser
 
 services:
@@ -24,12 +24,6 @@ services:
     volumes:
       # This folder — the archive itself. Read-only, enforced by the kernel.
       - "${NVR_DATA_DIR:-.}:/data:ro"
-      # Cache: segment index, muxed clips and the scrub preview frames. This is
-      # a separate read-write bind mount pointing at ./cache, so it persists on
-      # the drive and travels with it — a new machine starts with scrubbing
-      # already instant. The archive above stays read-only; nothing outside this
-      # one subdirectory is writable.
-      - "./cache:/cache"
 
     ports:
       # NVR_BIND=127.0.0.1 keeps it on this machine; 0.0.0.0 opens it to the
@@ -41,15 +35,13 @@ services:
       # should match the cameras' timezone.
       TZ: "${TZ:-Europe/Rome}"
       NVR_CLIP_SECONDS: "${NVR_CLIP_SECONDS:-300}"
-      NVR_CACHE_LIMIT_GB: "${NVR_CACHE_LIMIT_GB:-8}"
+      # Generated MP4s are evicted before the RAM-backed /cache fills.
+      NVR_CACHE_LIMIT_GB: "${NVR_CACHE_LIMIT_GB:-1.5}"
       # Optional: name cameras that aren't in the built-in map, e.g.
       # NVR_CAMERA_NAMES: "scrypted-31=Garage"
       NVR_CAMERA_NAMES: "${NVR_CAMERA_NAMES:-}"
-      # Scrub preview warming. Reading ahead is what makes scrubbing instant,
-      # but it is real disk work: "day" warms only the day you open, "all" also
-      # warms the whole archive at startup, "off" decodes on hover only.
-      # On a mechanical or busy drive, leave this at "day" and run "all" once
-      # while the drive is otherwise idle.
+      # Warm the selected day into volatile RAM. Nothing is persisted beside
+      # the footage, and the warm data disappears with the container.
       NVR_WARM: "${NVR_WARM:-day}"
       NVR_WARM_DELAY_MS: "${NVR_WARM_DELAY_MS:-250}"
       NVR_THUMB_BUCKET: "${NVR_THUMB_BUCKET:-60}"
@@ -57,6 +49,10 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m
+      # Volatile working set for the in-memory index, JIT MP4s and previews.
+      # Docker removes it with the container; no cache directory is created on
+      # the host. Keep NVR_CACHE_LIMIT_GB below this overall tmpfs capacity.
+      - /cache:size=${NVR_CACHE_TMPFS_SIZE:-2g},mode=1777
     cap_drop:
       - ALL
     security_opt:
